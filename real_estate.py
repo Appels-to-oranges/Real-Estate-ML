@@ -11,42 +11,18 @@ from sklearn.model_selection import train_test_split,GridSearchCV
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
 
+import cv2
+import numpy as np
+from PIL import Image
+from skimage.measure import shannon_entropy
 
-# CONFIGURATION (edit these)
+################################
+# IMAGE COLLECTION
+
 GOOGLE_API_KEY = ""
 
-# Load the ZIP centroid data
-zip_df = pd.read_csv("zip_cord.csv")
-
-# Trim leading 0s from ZIP codes in zip_df
-zip_df['ZIP'] = zip_df['ZIP'].astype(str)
-zip_df['ZIP'] = zip_df['ZIP'].str.lstrip('0')
-zip_df.sort_values(by='ZIP', inplace=True)
-# print(zip_df.head())
-
-# Cost by ZIP
-zip_cost = pd.read_csv("zip_cost.csv")
-zip_cost.rename(columns={"RegionName": "ZIP"}, inplace=True)
-
-# Trim leading 0s from ZIP codes in zip_cost
-zip_cost['ZIP'] = zip_cost['ZIP'].astype(str)
-zip_cost['ZIP'] = zip_cost['ZIP'].str.lstrip('0')
-zip_cost.sort_values(by='ZIP', inplace=True)
-# print(zip_cost.head())
-# order by region id
-
-# Merge ZIP data with cost data
-df = zip_df.merge(zip_cost, on="ZIP", how="left")
-# print(df.head())
-
-# to just filter to west coast states
-df = df[df['State'].isin(['OR', 'WA'])]
-# df length
-print("Filtered dataset length:", len(df))
-
-# distinct zip codes
-print("Distinct ZIP codes:", df['ZIP'].nunique())
-
+# create something to store the images in
+# os.makedirs("images", exist_ok=True)
 
 def get_satellite_image(lat, lng, zoom=13, size="600x600"):
     """Fetches satellite image from Google Static Maps API."""
@@ -60,14 +36,58 @@ def get_satellite_image(lat, lng, zoom=13, size="600x600"):
     else:
         raise Exception(f"Failed to fetch image: {resp.status_code} - {resp.text}")
 
-# create something to store the images in
-# os.makedirs("images", exist_ok=True)
-
 def save_image(image, zip_code):
     """Saves the image to a file."""
     filename = f"images/{zip_code}.png"
     image.save(filename)
     return filename
+
+################################
+# IMAGE PROCESSING
+
+def get_edge_density(image):
+    gray = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2GRAY)
+    edges = cv2.Canny(gray, threshold1=100, threshold2=200)
+    return np.sum(edges > 0) / edges.size
+
+def get_entropy(image):
+    gray = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2GRAY)
+    return shannon_entropy(gray)
+
+def get_hsv_means(image):
+    hsv = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2HSV)
+    h, s, v = hsv[..., 0], hsv[..., 1], hsv[..., 2]
+    return np.mean(h), np.mean(s), np.mean(v)
+
+def local_color_data(df):
+    i = 0
+    zips = df['ZIP'].unique()
+
+    for zip_code in zips:
+        try:
+            img = Image.open(f"images/{zip_code}.png").convert("RGB")
+            green, blue, grey = get_color_percentages(img)
+            edge_density = get_edge_density(img)
+            entropy = get_entropy(img)
+            h_mean, s_mean, v_mean = get_hsv_means(img)
+
+            df.loc[df['ZIP'] == zip_code, 'Green%'] = green
+            df.loc[df['ZIP'] == zip_code, 'Blue%'] = blue
+            df.loc[df['ZIP'] == zip_code, 'Grey%'] = grey
+            df.loc[df['ZIP'] == zip_code, 'EdgeDensity'] = edge_density
+            df.loc[df['ZIP'] == zip_code, 'Entropy'] = entropy
+            df.loc[df['ZIP'] == zip_code, 'HueMean'] = h_mean
+            df.loc[df['ZIP'] == zip_code, 'SatMean'] = s_mean
+            df.loc[df['ZIP'] == zip_code, 'ValMean'] = v_mean
+
+            print(f"Processed ZIP: {zip_code} ({i / len(zips) * 100:.1f}%)")
+
+        except Exception as e:
+            print(f"Error processing {zip_code}: {e}")
+
+        i += 1
+
+    return df
 
 def get_color_percentages(image, green_threshold=1.2, blue_threshold=1.2, grey_threshold=0.2):
     """Returns the percentage of green, blue and grey in the image."""
@@ -92,7 +112,9 @@ def get_color_percentages(image, green_threshold=1.2, blue_threshold=1.2, grey_t
         round((grey_pixels / total_pixels) * 100, 2)
     )
 
-def reshape_date_columns(df):
+################################
+
+def melt_date_columns(df):
     """
     Converts wide-format date columns to long format.
     
@@ -127,84 +149,113 @@ def reshape_date_columns(df):
     
     return melted_df
 
-# Example usage
-df = reshape_date_columns(df)
+################################
+
+# Load the ZIP centroid data
+zip_df = pd.read_csv("zip_cord.csv")
+# Trim leading 0s from ZIP codes in zip_df
+zip_df['ZIP'] = zip_df['ZIP'].astype(str)
+zip_df['ZIP'] = zip_df['ZIP'].str.lstrip('0')
+zip_df.sort_values(by='ZIP', inplace=True)
+print(zip_df.head())
+
+# Cost by ZIP
+zip_cost = pd.read_csv("zip_cost.csv")
+zip_cost.rename(columns={"RegionName": "ZIP"}, inplace=True)
+# Trim leading 0s from ZIP codes in zip_cost
+zip_cost['ZIP'] = zip_cost['ZIP'].astype(str)
+zip_cost['ZIP'] = zip_cost['ZIP'].str.lstrip('0')
+zip_cost.sort_values(by='ZIP', inplace=True)
+print(zip_cost.head())
+# order by region id
+
+# Merge ZIP data with cost data
+df = zip_df.merge(zip_cost, on="ZIP", how="left")
 # print(df.head())
 
+################################
+
+# to just filter to west coast states
+df = df[df['State'].isin(['OR', 'WA'])]
+# df length
+print("Filtered dataset length:", len(df))
+# distinct zip codes
+print("Distinct ZIP codes:", df['ZIP'].nunique())
+
+df = melt_date_columns(df)
+# print(df.head())
 # # print earliest date
 print("Earliest date in dataset:", df['Date'].min())
 print("Latest date in dataset:", df['Date'].max())
 
 # df['Date'] = pd.to_datetime(df['Date'])
 df['Year'] = df['Date'].dt.year
-df['Month'] = df['Date'].dt.month
+# df['Month'] = df['Date'].dt.month
 
-# Create future date column
-df['Future_Date'] = df['Date'] + pd.DateOffset(years=5)
+df.sample(10)
+df.head()
+df.info()
+df.columns
 
-# Create a copy of the dataframe with future values
-future_df = df.copy()
-future_df = future_df.rename(columns={'Value': 'Future_Value'})
-# join df with future_df on ZIP and Date (5 years later)
-df = df.merge(
-    future_df[['ZIP','Future_Value','Date']],
-    left_on=['ZIP', 'Future_Date'],
-    right_on=['ZIP', 'Date'],
-    how='left',
-    suffixes=('', '_y')
-)
+# Drop date, average value by every other column
+df.drop(columns=['index', 'Date','RegionID','RegionType'], inplace=True)    
+df = df.groupby(['ZIP', 'LAT', 'LNG', 'SizeRank',
+       'StateName', 'State', 'City', 'Metro', 'CountyName',
+       'Year']).agg({'Value': 'median'}).reset_index()
 
-# Calculate 5-year appreciation percentage where we have both values
-df['5yr_Appreciation%'] = ((df['Future_Value'] - df['Value']) / df['Value'] * 100).round(2)
+df.sample(10)
+df.head()
+df.info(0)
 
-# Add some debug printing
-print("\nDebug Information:")
-print("Total rows:", len(df))
-print("Rows with valid appreciation:", df['5yr_Appreciation%'].notna().sum())
+# Poverty/Income Data by County 2023
+SAIPE = pd.read_excel("est23all.xls")
+# promote first row to header
+SAIPE.columns = SAIPE.iloc[0]
+SAIPE.columns
+
+df = df.merge(SAIPE, on="CountyName", how="left")
+
+df.sample(10)
+# filter to 97203 only
+
+####################################
+
+df['Year'] = pd.to_datetime(df['Year'], format='%Y')
+
+# Sort so shift operates predictably
+df = df.sort_values(by=['ZIP', 'Year'])
+
+# Shift by 1, 5, and 10 years forward within each ZIP
+for n in [1, 5, 10]:
+    df[f'{n}y_Future_Value'] = df.groupby('ZIP')['Value'].shift(-n)
+    df[f'{n}yr_Appreciation%'] = (
+        (df[f'{n}y_Future_Value'] - df['Value']) / df['Value'] * 100
+    ).round(2)
 
 
-additional_columns = ['Green%', 'Blue%', 'Grey%']
-# add columns
+df.sample(10)
+
+####################################
+
+df.columns
+
+additional_columns = [
+    'Green%', 'Blue%', 'Grey%',
+    'EdgeDensity', 'Entropy',
+    'HueMean', 'SatMean', 'ValMean']
+
+# Add missing columns with NaN
 for col in additional_columns:
     if col not in df.columns:
         df[col] = np.nan
 
-# # for each unique zip code, get the color percentages and save the image
-# for idx, zip in enumerate(df['ZIP'].unique()):
-#     lat = df[df['ZIP'] == zip]['LAT'].values[0]
-#     lng = df[df['ZIP'] == zip]['LNG'].values[0]
-#     img = get_satellite_image(lat, lng)
-#     green, blue, grey = get_color_percentages(img)
-#     save_image(img, zip)
-#     print(f"Processed ZIP: {zip}")
-#     # zip x out of 820
-#     print(f"Progress: {(idx + 1) / len(df['ZIP'].unique()) * 100:.2f}%")
-#     # add the color percentages to the dataframe
-#     df.loc[df['ZIP'] == zip, 'Green%'] = green
-#     df.loc[df['ZIP'] == zip, 'Blue%'] = blue
-#     df.loc[df['ZIP'] == zip, 'Grey%'] = grey
+df = local_color_data(df)
 
+backup = df.copy()
+# to csv
+backup.to_csv('backup.csv', index=False, header=True)
 
-# get color pecentages for each zip from the image folder
-def local_color_data(df):
-    i = 0
-    for zip in df['ZIP'].unique():
-        img = Image.open(f"images/{zip}.png")
-        green, blue, grey = get_color_percentages(img)
-        df.loc[df['ZIP'] == zip, 'Green%'] = green
-        df.loc[df['ZIP'] == zip, 'Blue%'] = blue
-        df.loc[df['ZIP'] == zip, 'Grey%'] = grey
-        print(f"Processed ZIP: {zip}")
-        print(i / len(df['ZIP'].unique()) * 100)
-        i += 1
-    return df
-
-# df.head()
-# model = train_model(df)
-# print((df['5yr_Appreciation%'].nunique()))
-# Encode categorical variables
-
-categorical_cols = ['State']
+categorical_cols = ['State','Metro','City','CountyName']
 label_encoders = {}  # Store encoders to reuse later
 for col in categorical_cols:
     le = LabelEncoder()
@@ -212,11 +263,23 @@ for col in categorical_cols:
     # test[col] = le.transform(test[col])
     label_encoders[col] = le  # Store encoder in case it's needed later
 
-df = local_color_data(df)
+
+# df to csv
+# df.to_csv('zip_data_full.csv', index=False, header=True)
+################################
+# %%
+print(df.columns)
+
+df = df.dropna()
+# df.drop(columns=['1yr_Future_Value','StateName'], inplace=True)  
+
+X = df[['LAT', 'LNG', 'SizeRank' , 'State','City', 'Metro', 'CountyName',
+        'Poverty Estimate, All Ages', 'Poverty Percent, All Ages','Poverty Estimate, Age 0-17', 'Poverty Percent, Age 0-17','Poverty Estimate, Age 5-17 in Families',
+        'Poverty Percent, Age 5-17 in Families', 'Median Household Income','% Difference Avg Income',
+          '1yr_Appreciation%','Green%', 'Blue%', 'Grey%','EdgeDensity', 'Entropy','HueMean', 'SatMean', 
+          'ValMean']]
 
 
-df = df.dropna(subset=['Green%', 'Blue%', 'Grey%', '5yr_Appreciation%','State'])
-X = df[['Green%', 'Blue%', 'Grey%','State']]
 y = df['5yr_Appreciation%']
 
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
@@ -251,6 +314,8 @@ print("Mean Squared Error:", mean_squared_error(y_test, y_pred))
 print("Root Mean Squared Error:", np.sqrt(mean_squared_error(y_test, y_pred)))
 print("Mean Absolute Error:", mean_absolute_error(y_test, y_pred))
 
+################################
+
 import matplotlib.pyplot as plt
 
 # Get feature importances
@@ -275,3 +340,5 @@ plt.show()
 # Save the model
 # best_model.save_model("best_model.cbm")
 
+
+# %%
