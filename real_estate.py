@@ -22,8 +22,6 @@ from skimage.measure import shannon_entropy
 
 # GOOGLE_API_KEY = ""
 
-GOV_API = "50dcd78fd4c136a7372ee87e86ddeb18376bc2bd"
-
 # # create something to store the images in
 # # os.makedirs("images", exist_ok=True)
 
@@ -114,7 +112,6 @@ def get_color_percentages(image, green_threshold=1.2, blue_threshold=1.2, grey_t
 
 ################################
 # Melt
-
 def melt_date_columns(df):
     """
     Converts wide-format date columns to long format.
@@ -149,9 +146,7 @@ def melt_date_columns(df):
     melted_df = melted_df.sort_values(['index', 'Date'])
     
     return melted_df
-
 ################################
-
 # Load the ZIP centroid data
 zip_df = pd.read_csv("zip_cord.csv")
 zip_df['ZIP'] = zip_df['ZIP'].astype(str)
@@ -167,12 +162,8 @@ zip_cost['ZIP'] = zip_cost['ZIP'].str.lstrip('0')
 zip_cost.sort_values(by='ZIP', inplace=True)
 # print(zip_cost.head())
 
-# print("Distinct ZIP codes:", zip_cost['ZIP'].nunique())
-# 26318
-
 df = zip_df.merge(zip_cost, on="ZIP", how="left")
 # print(df.head())
-
 ################################
 # Clean
 
@@ -198,10 +189,7 @@ df['Year'] = df['Date'].dt.year
 df.drop(columns=['index', 'Date','RegionID','RegionType','StateName'], inplace=True)   
 
 ################################
-
 # IMAGE STUFF
-
-# df.columns
 
 # image_data = pd.DataFrame(df, columns=['ZIP'])
 
@@ -241,9 +229,9 @@ print("Image data merged successfully.")
 ################################
 # Yearly and County Medians
 
-df.drop(['LAT','LNG', 'SizeRank'], inplace=True, axis=1)
+df.drop(['LAT','LNG', 'SizeRank','ZIP','City'], inplace=True, axis=1)
 
-df = df.groupby(['State', 'City', 'Metro', 'CountyName','Year']).agg({
+df = df.groupby(['State', 'Metro', 'CountyName','Year']).agg({
     'Value': 'median',
     'Green%': 'mean',
     'Blue%': 'mean',
@@ -255,91 +243,119 @@ df = df.groupby(['State', 'City', 'Metro', 'CountyName','Year']).agg({
     'ValMean': 'mean'
 }).reset_index()
 
-df.drop_duplicates(subset=['CountyName', 'Year'], inplace=True)
+# df.drop_duplicates(subset=['CountyName', 'Year'], inplace=True)
 
-####################################
-# # Utility Data by ZIP 2020
-
-# iou = pd.read_csv("iou 2020.csv")
-# noniou = pd.read_csv("noniou 2020.csv")
-
-# iou = iou.groupby('zip').agg('mean').reset_index()
-# noniou = noniou.groupby('zip').agg('mean').reset_index()
-
-# utility = pd.merge(iou, noniou, on='zip', how='outer')
-# utility.rename(columns={"zip": "ZIP"}, inplace=True)
-# utility['ZIP'] = utility['ZIP'].astype(str)
-# utility['ZIP'] = utility['ZIP'].str.lstrip('0')
-
-# utility['ZIP'].unique()
-# utility.columns
-
-# df = df.merge(utility, on="ZIP", how="left")
-
+# df.describe()
 # df.sample(10)
 
-# print(df['ZIP'].nunique())
-# print(df['Year'].nunique())
-
-# df.drop_duplicates(subset=['ZIP', 'Year'], inplace=True)
+print("Grouped")
 
 ####################################
+def utility_stuff():
+    # # Utility Data by ZIP 2020
+
+    # iou = pd.read_csv("iou 2020.csv")
+    # noniou = pd.read_csv("noniou 2020.csv")
+
+    # iou = iou.groupby('zip').agg('mean').reset_index()
+    # noniou = noniou.groupby('zip').agg('mean').reset_index()
+
+    # utility = pd.merge(iou, noniou, on='zip', how='outer')
+    # utility.rename(columns={"zip": "ZIP"}, inplace=True)
+    # utility['ZIP'] = utility['ZIP'].astype(str)
+    # utility['ZIP'] = utility['ZIP'].str.lstrip('0')
+
+    # utility['ZIP'].unique()
+    # utility.columns
+
+    # df = df.merge(utility, on="ZIP", how="left")
+
+    # df.sample(10)
+
+    # print(df['ZIP'].nunique())
+    # print(df['Year'].nunique())
+
+    # df.drop_duplicates(subset=['ZIP', 'Year'], inplace=True)
+    return True
+####################################
+
+# Appreciation Calculation
+print("Calculating appreciation...")
 
 df['Year'] = pd.to_datetime(df['Year'], format='%Y')
+
+# df['CountyName'].nunique()
+# df['Year'].nunique()
 
 # Keep only relevant columns to merge
 base = df[['CountyName', 'Year', 'Value']].copy()
 
-for n in [1, 5, 10]:
-    # Create a future year column
-    base_future = base.copy()
-    base_future['Year'] = base_future['Year'] - pd.DateOffset(years=n)
-    base_future = base_future.rename(columns={'Value': f'{n}y_Future_Value'})
+# for n in [1, 5, 10]:
+#     # Create a future year column
+#     base_future = base.copy()
+#     base_future['Year'] = base_future['Year'] - pd.DateOffset(years=n)
+#     base_future = base_future.rename(columns={'Value': f'{n}y_Future_Value'})
 
-    # Merge on ZIP and exact year offset
-    df = df.merge(base_future, on=['CountyName', 'Year'], how='left')
+#     # Merge on ZIP and exact year offset
+#     df = df.merge(base_future, on=['CountyName', 'Year'], how='left')
 
-    # Calculate appreciation only where future value is valid
-    df[f'{n}yr_Appreciation%'] = (
-        ((df[f'{n}y_Future_Value'] - df['Value']) 
-        / df['Value']) 
-    * 100
-    ).round(2)
+#     # Calculate appreciation only where future value is valid
+#     df[f'{n}yr_Appreciation%'] = (
+#         ((df[f'{n}y_Future_Value'] - df['Value']) 
+#         / df['Value']) 
+#     * 100
+#     ).round(2)
+
+base_future = base.copy()
+base_future['Year'] = base_future['Year'] - pd.DateOffset(years=5)
+
+# We bring the year back 5 years for merging the future
+
+base_future = base_future.rename(columns={'Value': '5y_Future_Value'})
+df = df.merge(base_future, on=['CountyName', 'Year'], how='left')
+
+
+df[f'5yr_Appreciation%'] = (((df['5y_Future_Value'] - df['Value']) / df['Value']) * 100).round(2)
 
 # df['5yr_Appreciation%'].mean()
 # df['10yr_Appreciation%'].mean()
 # df['Value'].mean()
 
-df['Year'] = pd.to_datetime(df['Year'], format='%Y')
+# df['Year'] = pd.to_datetime(df['Year'], format='%Y')
 df['Year'] = df['Year'].dt.strftime('%Y')
 df['Year'] = df['Year'].astype(int)
-df['Year'].sample(10)
-
-# atest = df[df['ZIP'] == '97203']
-# atest.sort_values(by='Year', ascending=True)
-# atest.head(10)
+# df['Year'].sample(10)
 
 save = df.copy()
 df = save.copy()
 
-save['CountyName'].nunique()
-save['CountyName'].count()
+# save['CountyName'].nunique()
+# save['Year'].nunique()
+
+df.sample(10)
+# df['5yr_Appreciation%'].mean()
 
 # bar chart nulls by year
-# null_df = df[df.isnull().any(axis=1)]
-# import matplotlib.pyplot as plt
-# import seaborn as sns
-# plt.figure(figsize=(12, 6))
-# sns.countplot(data=null_df, x='Year', palette='viridis')
-# plt.title('Count of Null Values by Year')
-# plt.xticks(rotation=45)
-# plt.xlabel('Year')
-# plt.ylabel('Count of Null Values')
-# plt.tight_layout()
-# plt.show()
+null_df = df[df.isnull().any(axis=1)]
+import matplotlib.pyplot as plt
+import seaborn as sns
+plt.figure(figsize=(12, 6))
+sns.countplot(data=null_df, x='Year', palette='viridis')
+plt.title('Count of Null Values by Year')
+plt.xticks(rotation=45)
+plt.xlabel('Year')
+plt.ylabel('Count of Null Values')
+plt.tight_layout()
+plt.show()
+
+df = df[df['Year'] <= 2020]
 
 ####################################
 # === SAIPE API ===
+
+print('SAIPE DATA FETCHING...')
+
+GOV_API = ""
 
 # Map state abbreviations to FIPS
 state_abbr_to_fips = {
@@ -494,6 +510,8 @@ print('Census data merged successfully.')
 ####################################
 # Encoding and Cleaning
 
+print("Cleaning and encoding...")
+
 # df = backup.copy()
 # to csv
 # backup.to_csv('backup.csv', index=False, header=True)
@@ -501,7 +519,7 @@ print('Census data merged successfully.')
 
 df.columns
 
-df.drop(columns=['5y_Future_Value','10y_Future_Value','1y_Future_Value','10yr_Appreciation%','1yr_Appreciation%','fips','county_fips','NAME','state_fips','state_name','county_name','county_y','county_x','state','YEAR'], inplace=True)
+df.drop(columns=['5y_Future_Value','fips','county_fips','NAME','state_fips','state_name','county_name','county_y','county_x','state','YEAR'], inplace=True)
 
 df = df[df['Year'] >= 2000]
 df = df[df['Year'] <= 2020]
@@ -538,18 +556,6 @@ encoded_df = pd.DataFrame(encoded_cols, columns=encoder.get_feature_names_out(en
 encoded_df.sample(10)
 df = df.drop(columns=encode)
 df = pd.concat([df, encoded_df], axis=1)
-
-# We need a way to convert the one hot encoded columns back to the original categorical values if needed later.
-# # Store the encoder for later use
-# one_hot_encoders = {}
-# for col in encode:
-#     ohe = OneHotEncoder(sparse=False, drop='first')
-#     encoded_cols = ohe.fit_transform(df[[col]])
-
-#     encoded_df = pd.DataFrame(encoded_cols, columns=ohe.get_feature_names_out([col]))
-#     df = df.drop(columns=[col]) 
-#     print(f"Encoded {col} into {encoded_df.columns.tolist()}")
-
 
 # Label Encoding:
 # label_encoders = {}  # Store encoders to reuse later
@@ -589,7 +595,7 @@ df = pd.DataFrame(imputer.fit_transform(df), columns=df.columns)
 df.dropna(subset=['5yr_Appreciation%'], inplace=True)
 
 df_clean = df.copy()
-
+# df_clean.corr()
 df_clean.sample(10)
 # df_clean['CountyName'].nunique()
 
@@ -640,9 +646,9 @@ print("Best R² score:", grid_search.best_score_)
 
 best_model = grid_search.best_estimator_
 
-print('Predicting...')
-
 y_pred = best_model.predict(X_test)
+
+print("Predictions complete")
 
 print("R² Score:", r2_score(y_test, y_pred))
 print("Mean Squared Error:", mean_squared_error(y_test, y_pred))
@@ -650,22 +656,7 @@ print("Root Mean Squared Error:", np.sqrt(mean_squared_error(y_test, y_pred)))
 print("Mean Absolute Error:", mean_absolute_error(y_test, y_pred))
 
 # ################################
-X_test.sample(10)
 
-
-raw_data.columns
-
-# Print zips with the highest predicted values
-# Get the indices of the top 10 predictions
-top_indices = np.argsort(y_pred)[-10:]
-# Get the corresponding counties and predicted values
-top_counties = np.array(raw_data.iloc[top_indices]['CountyName'])
-top_values = y_pred[top_indices]
-
-# # Print the results
-print("Top 10 predicted values:")   
-for county, value in zip(top_counties, top_values):
-    print(f"County: {county}, Predicted Value: {value:.2f}")
 
 # ################################
 
@@ -698,15 +689,15 @@ plt.tight_layout()
 plt.show()
 
 ################################
-# import plotly.express as px
-residuals = y_test - y_pred
-res_df = test.copy()
-res_df['Residual'] = residuals
-res_df['Residual'] = res_df['Residual'].abs()
-# res_df = res_df[res_df['Residual']>10]
+# # import plotly.express as px
+# residuals = y_test - y_pred
+# res_df = test.copy()
+# res_df['Residual'] = residuals
+# res_df['Residual'] = res_df['Residual'].abs()
+# # res_df = res_df[res_df['Residual']>10]
 
-# group by county and year, then take the mean residual
-res_df = res_df.groupby(['CountyName']).agg({'Residual': 'mean'}).reset_index()
+# # group by county and year, then take the mean residual
+# res_df = res_df.groupby(['CountyName']).agg({'Residual': 'mean'}).reset_index()
 
 # res_df.head(10)
 
@@ -733,14 +724,14 @@ res_df = res_df.groupby(['CountyName']).agg({'Residual': 'mean'}).reset_index()
 # # fig.update_layout(geo=dict(showland=True, landcolor='lightgray'))
 # # fig.show()
 
-import seaborn as sns
-import matplotlib.pyplot as plt
+# import seaborn as sns
+# import matplotlib.pyplot as plt
 
-sns.histplot(y_train, kde=True, label='Train', color='blue')
-sns.histplot(y_test, kde=True, label='Test', color='red')
-plt.legend()
-plt.title("Target (5yr Appreciation%) Distribution")
-plt.show()
+# sns.histplot(y_train, kde=True, label='Train', color='blue')
+# sns.histplot(y_test, kde=True, label='Test', color='red')
+# plt.legend()
+# plt.title("Target (5yr Appreciation%) Distribution")
+# plt.show()
 
 # ################################
 
@@ -758,54 +749,54 @@ plt.show()
 # # %%
 
 
-# Create dash app that allows the user to select a state and a price range for predicted appreciation
-import dash
-from dash import dcc, html, Input, Output
-import plotly.express as px
-# Ensure the DataFrame is ready for visualization
-df['5yr_Appreciation%'] = df['5yr_Appreciation%'].astype(float)
-# Filter the DataFrame to only include relevant columns for visualization
-df = df[['State', 'ZIP', '5yr_Appreciation%', 'LAT', 'LNG']].dropna()
-app = dash.Dash(__name__)
-app.layout = html.Div([
-    html.H1("Real Estate Appreciation Predictor"),
-    dcc.Dropdown(
-        id='state-dropdown',
-        options=[{'label': state, 'value': state} for state in df['State'].unique()],
-        value='or',  # Default value
-        clearable=False
-    ),
-    dcc.RangeSlider(
-        id='price-range-slider',
-        min=df['5yr_Appreciation%'].min(),
-        max=df['5yr_Appreciation%'].max(),
-        value=[df['5yr_Appreciation%'].min(), df['5yr_Appreciation%'].max()],
-        marks={i: str(i) for i in range(int(df['5yr_Appreciation%'].min()), int(df['5yr_Appreciation%'].max()) + 1, 10)},
-        step=1
-    ),
-    dcc.Graph(id='appreciation-map')
-])
-@app.callback(
-    Output('appreciation-map', 'figure'),
-    Input('state-dropdown', 'value'),
-    Input('price-range-slider', 'value')
-)
-def update_map(selected_state, price_range):
-    filtered_df = df[(df['State'] == selected_state) & 
-                     (df['5yr_Appreciation%'] >= price_range[0]) & 
-                     (df['5yr_Appreciation%'] <= price_range[1])]
+# # Create dash app that allows the user to select a state and a price range for predicted appreciation
+# import dash
+# from dash import dcc, html, Input, Output
+# import plotly.express as px
+# # Ensure the DataFrame is ready for visualization
+# df['5yr_Appreciation%'] = df['5yr_Appreciation%'].astype(float)
+# # Filter the DataFrame to only include relevant columns for visualization
+# df = df[['State', 'ZIP', '5yr_Appreciation%', 'LAT', 'LNG']].dropna()
+# app = dash.Dash(__name__)
+# app.layout = html.Div([
+#     html.H1("Real Estate Appreciation Predictor"),
+#     dcc.Dropdown(
+#         id='state-dropdown',
+#         options=[{'label': state, 'value': state} for state in df['State'].unique()],
+#         value='or',  # Default value
+#         clearable=False
+#     ),
+#     dcc.RangeSlider(
+#         id='price-range-slider',
+#         min=df['5yr_Appreciation%'].min(),
+#         max=df['5yr_Appreciation%'].max(),
+#         value=[df['5yr_Appreciation%'].min(), df['5yr_Appreciation%'].max()],
+#         marks={i: str(i) for i in range(int(df['5yr_Appreciation%'].min()), int(df['5yr_Appreciation%'].max()) + 1, 10)},
+#         step=1
+#     ),
+#     dcc.Graph(id='appreciation-map')
+# ])
+# @app.callback(
+#     Output('appreciation-map', 'figure'),
+#     Input('state-dropdown', 'value'),
+#     Input('price-range-slider', 'value')
+# )
+# def update_map(selected_state, price_range):
+#     filtered_df = df[(df['State'] == selected_state) & 
+#                      (df['5yr_Appreciation%'] >= price_range[0]) & 
+#                      (df['5yr_Appreciation%'] <= price_range[1])]
     
-    fig = px.scatter_geo(
-        filtered_df,
-        lat='LAT', lon='LNG',
-        color='5yr_Appreciation%',
-        hover_name='ZIP',
-        title=f'Real Estate Appreciation in {selected_state.upper()}',
-        color_continuous_scale='Viridis',
-        scope='usa'
-    )
+#     fig = px.scatter_geo(
+#         filtered_df,
+#         lat='LAT', lon='LNG',
+#         color='5yr_Appreciation%',
+#         hover_name='ZIP',
+#         title=f'Real Estate Appreciation in {selected_state.upper()}',
+#         color_continuous_scale='Viridis',
+#         scope='usa'
+#     )
     
-    return fig
-if __name__ == '__main__':
-    app.run_server(debug=True, use_reloader=False)  # Turn off reloader if inside Jupyter
-# %%
+#     return fig
+# if __name__ == '__main__':
+#     app.run_server(debug=True, use_reloader=False)  # Turn off reloader if inside Jupyter
+# # %%
