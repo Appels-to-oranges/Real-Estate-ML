@@ -1,6 +1,7 @@
 # %%
 ################################
 # Import necessary libraries
+
 import requests
 import pandas as pd
 import os
@@ -16,6 +17,14 @@ from io import BytesIO
 import cv2
 from PIL import Image
 from skimage.measure import shannon_entropy
+
+import plotly.express as px
+import matplotlib.pyplot as plt
+import seaborn as sns
+import folium
+from folium import Choropleth, CircleMarker
+from folium.plugins import MarkerCluster
+import branca.colormap as cm
 
 ################################
 # IMAGE STUFF
@@ -229,7 +238,7 @@ print("Image data merged successfully.")
 ################################
 # Yearly and County Medians
 
-df.drop(['LAT','LNG', 'SizeRank','ZIP','City'], inplace=True, axis=1)
+df.drop(['SizeRank','ZIP','City'], inplace=True, axis=1)
 
 df = df.groupby(['State', 'Metro', 'CountyName','Year']).agg({
     'Value': 'median',
@@ -240,7 +249,9 @@ df = df.groupby(['State', 'Metro', 'CountyName','Year']).agg({
     'Entropy': 'mean',
     'HueMean': 'mean',
     'SatMean': 'mean',
-    'ValMean': 'mean'
+    'ValMean': 'mean',
+    'LAT': 'mean',
+    'LNG': 'mean'
 }).reset_index()
 
 # df.drop_duplicates(subset=['CountyName', 'Year'], inplace=True)
@@ -278,7 +289,6 @@ def utility_stuff():
     # df.drop_duplicates(subset=['ZIP', 'Year'], inplace=True)
     return True
 ####################################
-
 # Appreciation Calculation
 print("Calculating appreciation...")
 
@@ -290,7 +300,13 @@ df['Year'] = pd.to_datetime(df['Year'], format='%Y')
 # Keep only relevant columns to merge
 base = df[['CountyName', 'Year', 'Value']].copy()
 
-# for n in [1, 5, 10]:
+def calculate_future_appreciation(base,n):
+    """
+    Calculate future appreciation for a given number of years.
+
+    We won't use this function in the final code, but it's here for reference.
+    """
+    # for n in [1, 5, 10]:
 #     # Create a future year column
 #     base_future = base.copy()
 #     base_future['Year'] = base_future['Year'] - pd.DateOffset(years=n)
@@ -305,6 +321,8 @@ base = df[['CountyName', 'Year', 'Value']].copy()
 #         / df['Value']) 
 #     * 100
 #     ).round(2)
+    
+    return df
 
 base_future = base.copy()
 base_future['Year'] = base_future['Year'] - pd.DateOffset(years=5)
@@ -313,13 +331,7 @@ base_future['Year'] = base_future['Year'] - pd.DateOffset(years=5)
 
 base_future = base_future.rename(columns={'Value': '5y_Future_Value'})
 df = df.merge(base_future, on=['CountyName', 'Year'], how='left')
-
-
 df[f'5yr_Appreciation%'] = (((df['5y_Future_Value'] - df['Value']) / df['Value']) * 100).round(2)
-
-# df['5yr_Appreciation%'].mean()
-# df['10yr_Appreciation%'].mean()
-# df['Value'].mean()
 
 # df['Year'] = pd.to_datetime(df['Year'], format='%Y')
 df['Year'] = df['Year'].dt.strftime('%Y')
@@ -332,13 +344,13 @@ df = save.copy()
 # save['CountyName'].nunique()
 # save['Year'].nunique()
 
-df.sample(10)
-# df['5yr_Appreciation%'].mean()
+# df.sample(10)
+mean_5yr_appreciation = df['5yr_Appreciation%'].mean().round(2)
+print('mean 5yr appreciation: ' + str(mean_5yr_appreciation) + '%') 
 
 # bar chart nulls by year
 null_df = df[df.isnull().any(axis=1)]
-import matplotlib.pyplot as plt
-import seaborn as sns
+
 plt.figure(figsize=(12, 6))
 sns.countplot(data=null_df, x='Year', palette='viridis')
 plt.title('Count of Null Values by Year')
@@ -357,7 +369,8 @@ print('SAIPE DATA FETCHING...')
 
 GOV_API = ""
 
-# Map state abbreviations to FIPS
+# Map state abbreviations to FIPS for merging
+# We need FIPS codes to merge SAIPE data with our zilow data.
 state_abbr_to_fips = {
     'AL': '01', 'AK': '02', 'AZ': '04', 'AR': '05', 'CA': '06', 'CO': '08',
     'CT': '09', 'DE': '10', 'FL': '12', 'GA': '13', 'HI': '15', 'ID': '16',
@@ -393,46 +406,55 @@ df = df.merge(
 df['county_fips'] = df['fips'].astype(str).str[-3:].str.zfill(3)
 len(df)
 
-# # === Call SAIPE API ===
-# base_url = "https://api.census.gov/data/timeseries/poverty/saipe"
-# variables = "NAME,SAEMHI_PT,SAEPOVALL_PT,SAEPOVRTALL_PT"
+###########
 
-# saipe_data = []
+def SAIPE_CALL():
+    """
+    This function is a placeholder for the SAIPE API call. 
+    Since we're saving the data to a CSV file, we won't actually call the API here.
+    The code is commented out to prevent execution.
+    Just to save space.
+    """
 
-# api_requests = df[['county_fips','county', 'state_fips', 'Year']].drop_duplicates().copy()
-# length = len(api_requests)
-# api_requests.sample(10)
-# i = 0
-# for _, row in api_requests.iterrows():
-#     i += 1
-#     params = {
-#         "get": variables,
-#         "for": f"county:{row['county_fips']}",
-#         "in": f"state:{row['state_fips']}",
-#         "YEAR": str(row['Year'])
-#     }
-#     response = requests.get(base_url, params=params)
-#     print(str((i/length)*100) + "%")
-#     if response.status_code == 200:
-#         json_data = response.json()
-#         headers = json_data[0]
-#         values = json_data[1]
-#         saipe_data.append(dict(zip(headers, values)))
-#     else:
-#         print(f"Failed for {row['county']}, ({row['Year']})")
-#     time.sleep(0.5)
+    # # === Call SAIPE API ===
+    # base_url = "https://api.census.gov/data/timeseries/poverty/saipe"
+    # variables = "NAME,SAEMHI_PT,SAEPOVALL_PT,SAEPOVRTALL_PT"
+
+    # saipe_data = []
+
+    # api_requests = df[['county_fips','county', 'state_fips', 'Year']].drop_duplicates().copy()
+    # length = len(api_requests)
+    # api_requests.sample(10)
+    # i = 0
+    # for _, row in api_requests.iterrows():
+    #     i += 1
+    #     params = {
+    #         "get": variables,
+    #         "for": f"county:{row['county_fips']}",
+    #         "in": f"state:{row['state_fips']}",
+    #         "YEAR": str(row['Year'])
+    #     }
+    #     response = requests.get(base_url, params=params)
+    #     print(str((i/length)*100) + "%")
+    #     if response.status_code == 200:
+    #         json_data = response.json()
+    #         headers = json_data[0]
+    #         values = json_data[1]
+    #         saipe_data.append(dict(zip(headers, values)))
+    #     else:
+    #         print(f"Failed for {row['county']}, ({row['Year']})")
+    #     time.sleep(0.5)
 
 # saipe_df = pd.DataFrame(saipe_data)
 
 # saipe_df.to_csv('saipe.csv', index=False, header=True)
-
 saipe_df = pd.read_csv('saipe.csv')
+
 # Ensure consistent format
 saipe_df['YEAR'] = saipe_df['YEAR'].astype(int)
 saipe_df['state'] = saipe_df['state'].astype(str).str.zfill(2)
 saipe_df['county'] = saipe_df['county'].astype(str).str.zfill(3)
 
-#  rename NAME,SAEMHI_PT,SAEPOVALL_PT,SAEPOVRTALL_PT
 saipe_df.rename(columns={
     'SAEMHI_PT': 'County median Income',
     'SAEPOVALL_PT': 'County Poverty Count',
@@ -494,15 +516,6 @@ df = df.merge(
     right_on=['state', 'county', 'YEAR']
 )
 
-# Done — you can now sample or export
-# df.sample(5)
-
-# df['ZIP'] = df['ZIP'].astype(str)
-# df['ZIP'] = df['ZIP'].str.lstrip('0')
-
-# test = df[df['ZIP'] == '97203'][df['Year'] == 2023]
-# test.sample(1)
-
 print('Census data merged successfully.')
 
 ####################################
@@ -512,22 +525,23 @@ print('Census data merged successfully.')
 
 print("Cleaning and encoding...")
 
-# df = backup.copy()
-# to csv
-# backup.to_csv('backup.csv', index=False, header=True)
-# print(df['ZIP'].unique())
-
-df.columns
+# df.columns
 
 df.drop(columns=['5y_Future_Value','fips','county_fips','NAME','state_fips','state_name','county_name','county_y','county_x','state','YEAR'], inplace=True)
 
 df = df[df['Year'] >= 2000]
 df = df[df['Year'] <= 2020]
 
+df.reset_index(drop=True, inplace=True)
+
 raw_data = df.copy()
 raw_data.columns
+
 print(raw_data['CountyName'].nunique())
-# print(raw_data['CountyName'].count())
+
+# Identify categorical columns for encoding
+# We will one-hot encode categorical variables with fewer than 10 unique values (State)
+
 # categorical_cols = ['State','Metro','City','CountyName']
 categorical_cols = []
 for col in df.columns:
@@ -558,6 +572,9 @@ df = df.drop(columns=encode)
 df = pd.concat([df, encoded_df], axis=1)
 
 # Label Encoding:
+# N/A will not be used as we have one hot encoded the categorical variables
+# Since they are not ordinal, label encoding is not appropriate here.
+
 # label_encoders = {}  # Store encoders to reuse later
 # for col in categorical_cols:
 #     le = LabelEncoder()
@@ -565,25 +582,12 @@ df = pd.concat([df, encoded_df], axis=1)
 #     # test[col] = le.transform(test[col])
 #     label_encoders[col] = le  # Store encoder in case it's needed later
 
-# df to csv
-# df.to_csv('zip_data_full.csv', index=False, header=True)
-
 ################################
 # %%
 df.columns
  
 # # Stuff with little impact on the model :(
 # df.drop(columns=['Blue%', 'ValMean', 'SizeRank', 'City', 'ind_rate_y', 'Entropy', 'SatMean', 'State AVG Poverty %', 'State', 'Green%', 'State median Income'], inplace=True)
-# print null count for each column
-# null_counts = df.isnull().sum()
-# print("Null counts for each column:")
-# print(null_counts[null_counts > 0])
-
-# df.fillna(df.median(), inplace=True)
-# df = df.dropna()
-
-# group by county and year, then take the mean
-# df = df.groupby(['CountyName', 'Year']).mean().reset_index()
 
 # KNN-based imputation
 imputer = KNNImputer(n_neighbors=5, weights='distance')
@@ -651,12 +655,20 @@ y_pred = best_model.predict(X_test)
 print("Predictions complete")
 
 print("R² Score:", r2_score(y_test, y_pred))
-print("Mean Squared Error:", mean_squared_error(y_test, y_pred))
-print("Root Mean Squared Error:", np.sqrt(mean_squared_error(y_test, y_pred)))
+# print("Mean Squared Error:", mean_squared_error(y_test, y_pred))
+# print("Root Mean Squared Error:", np.sqrt(mean_squared_error(y_test, y_pred)))
 print("Mean Absolute Error:", mean_absolute_error(y_test, y_pred))
 
 # ################################
+# Get the rows in raw_data corresponding to test set
+test_meta = raw_data[raw_data['Year'] >= CUTOFF_YEAR].reset_index(drop=True)
 
+# Sanity check – make sure lengths match
+assert len(test_meta) == len(y_pred), "Mismatch between test metadata and predictions."
+
+test_meta['Predicted_5yr_Appreciation%'] = y_pred
+
+print(test_meta[['CountyName', 'Predicted_5yr_Appreciation%']].head())
 
 # ################################
 
@@ -688,44 +700,32 @@ plt.tight_layout()
 
 plt.show()
 
-################################
-# # import plotly.express as px
 # residuals = y_test - y_pred
-# res_df = test.copy()
-# res_df['Residual'] = residuals
-# res_df['Residual'] = res_df['Residual'].abs()
-# # res_df = res_df[res_df['Residual']>10]
+################################
 
-# # group by county and year, then take the mean residual
-# res_df = res_df.groupby(['CountyName']).agg({'Residual': 'mean'}).reset_index()
+print("R² Score:", r2_score(y_test, y_pred))
+print("Mean Absolute Error:", mean_absolute_error(y_test, y_pred))
 
-# res_df.head(10)
+################################
+# Plotly Map Visualization
 
-# # res_df['ZIP'] = y_test.index  # or wherever your ZIP column is
+# fig = px.scatter_geo(
+#     test_meta[['CountyName', 'Predicted_5yr_Appreciation%','LNG','LAT']],
+#     lat='LAT', lon='LNG',
+#     color='Predicted_5yr_Appreciation%',
+#     color_continuous_scale='RdBu',
+#     range_color=[30, 100],  # adjust to your residual spread
+#     hover_name='CountyName',
+#     scope='usa',
+#     title='Prediction by County Coordinates'
+# )
 
-# # If ZIP was label encoded, reverse it
-# # if isinstance(res_df['ZIP'].iloc[0], (int, np.integer)) and 'ZIP' in label_encoders:
-# #     res_df['ZIP'] = label_encoders['ZIP'].inverse_transform(res_df['ZIP'])
+# fig.update_traces(marker=dict(size=6, opacity=0.7))
+# fig.update_layout(geo=dict(showland=True, landcolor='lightgray'))
+# fig.show()
 
-# # # res_df.sample(10)
-
-# # fig = px.scatter_geo(
-# #     res_df,
-# #     lat='LAT', lon='LNG',
-# #     color='Residual',
-# #     color_continuous_scale='RdBu',
-# #     range_color=[50, 100],  # adjust to your residual spread
-# #     hover_name='ZIP',
-# #     scope='usa',
-# #     title='Prediction Residuals by ZIP Coordinates'
-# # )
-
-# # fig.update_traces(marker=dict(size=6, opacity=0.7))
-# # fig.update_layout(geo=dict(showland=True, landcolor='lightgray'))
-# # fig.show()
-
-# import seaborn as sns
-# import matplotlib.pyplot as plt
+################################
+# Train/Test Distribution
 
 # sns.histplot(y_train, kde=True, label='Train', color='blue')
 # sns.histplot(y_test, kde=True, label='Test', color='red')
@@ -733,11 +733,43 @@ plt.show()
 # plt.title("Target (5yr Appreciation%) Distribution")
 # plt.show()
 
+# # ################################
+# Folium Map Visualization
+
+# # Filter and prep your DataFrame
+# df_map = test_meta[['CountyName', 'Predicted_5yr_Appreciation%', 'LAT', 'LNG']].dropna()
+# df_map = df_map[df_map['Predicted_5yr_Appreciation%'].between(30, 100)]
+
+# # Create color scale
+# color_scale = cm.linear.RdBu_11.scale(30, 100).to_step(index=[30, 40, 50, 60, 70, 80, 90, 100])
+
+# # Create base map
+# m = folium.Map(location=[46, -120], zoom_start=6, tiles='CartoDB positron')
+
+# # Add circle markers
+# for i, row in df_map.iterrows():
+#     CircleMarker(
+#         location=(row['LAT'], row['LNG']),
+#         radius=5,
+#         color=color_scale(row['Predicted_5yr_Appreciation%']),
+#         fill=True,
+#         fill_color=color_scale(row['Predicted_5yr_Appreciation%']),
+#         fill_opacity=0.7,
+#         popup=folium.Popup(f"{row['CountyName']}: {row['Predicted_5yr_Appreciation%']:.2f}%", parse_html=True)
+#     ).add_to(m)
+
+# color_scale.caption = 'Predicted 5-Year Appreciation (%)'
+# color_scale.add_to(m)
+
+# # Save map
+# m.save('prediction_map_folium.html')
+
 # ################################
 
 # This model needs more time series data to be accurate
 
 # # The image data is also not very useful. Cool idea. Could be optimized with zoom level maybe.
+
 # #  Some type of deep learning model could be used to extract features from the images.
 
 # # County is important, as is city and metro.
@@ -746,57 +778,4 @@ plt.show()
 
 # # Another idea would be to make this a classification problem and predict if the appreciation is above or below a certain threshold.
 
-# # %%
-
-
-# # Create dash app that allows the user to select a state and a price range for predicted appreciation
-# import dash
-# from dash import dcc, html, Input, Output
-# import plotly.express as px
-# # Ensure the DataFrame is ready for visualization
-# df['5yr_Appreciation%'] = df['5yr_Appreciation%'].astype(float)
-# # Filter the DataFrame to only include relevant columns for visualization
-# df = df[['State', 'ZIP', '5yr_Appreciation%', 'LAT', 'LNG']].dropna()
-# app = dash.Dash(__name__)
-# app.layout = html.Div([
-#     html.H1("Real Estate Appreciation Predictor"),
-#     dcc.Dropdown(
-#         id='state-dropdown',
-#         options=[{'label': state, 'value': state} for state in df['State'].unique()],
-#         value='or',  # Default value
-#         clearable=False
-#     ),
-#     dcc.RangeSlider(
-#         id='price-range-slider',
-#         min=df['5yr_Appreciation%'].min(),
-#         max=df['5yr_Appreciation%'].max(),
-#         value=[df['5yr_Appreciation%'].min(), df['5yr_Appreciation%'].max()],
-#         marks={i: str(i) for i in range(int(df['5yr_Appreciation%'].min()), int(df['5yr_Appreciation%'].max()) + 1, 10)},
-#         step=1
-#     ),
-#     dcc.Graph(id='appreciation-map')
-# ])
-# @app.callback(
-#     Output('appreciation-map', 'figure'),
-#     Input('state-dropdown', 'value'),
-#     Input('price-range-slider', 'value')
-# )
-# def update_map(selected_state, price_range):
-#     filtered_df = df[(df['State'] == selected_state) & 
-#                      (df['5yr_Appreciation%'] >= price_range[0]) & 
-#                      (df['5yr_Appreciation%'] <= price_range[1])]
-    
-#     fig = px.scatter_geo(
-#         filtered_df,
-#         lat='LAT', lon='LNG',
-#         color='5yr_Appreciation%',
-#         hover_name='ZIP',
-#         title=f'Real Estate Appreciation in {selected_state.upper()}',
-#         color_continuous_scale='Viridis',
-#         scope='usa'
-#     )
-    
-#     return fig
-# if __name__ == '__main__':
-#     app.run_server(debug=True, use_reloader=False)  # Turn off reloader if inside Jupyter
 # # %%
